@@ -1,9 +1,10 @@
 # ShellParser - AI-Augmented Shell Script Component Manager
 
-[![Version](https://img.shields.io/badge/Version-1.0.0-blue?style=flat-square)](https://github.com/cloudgen/ShellParser)
+[![Version](https://img.shields.io/badge/Version-1.0.1-blue?style=flat-square)](https://github.com/cloudgen/ShellParser)
 [![License](https://img.shields.io/badge/License-MIT-green?style=flat-square)](LICENSE)
 [![CIAO](https://img.shields.io/badge/Philosophy-CIAO%20(Caution%20%E2%80%A2%20Intentional%20%E2%80%A2%20Anti--fragile%20%E2%80%A2%20Over--protect)-purple.svg)](https://github.com/cloudgen/ciao)
 [![Python](https://img.shields.io/badge/Python-3.8%2B-blue?style=flat-square)]()
+![GitHub stars](https://img.shields.io/github/stars/cloudgen/ShellParser?style=social)
 
 **A battlefield-hardened, CIAO-defensive tool that turns massive legacy shell scripts into small, AI-editable components.**
 
@@ -29,12 +30,40 @@ ShellParser solves one of the biggest pain points when working with large shell 
 
 ---
 
+## Why ShellParser is the Best Among Similar Products
+
+Most tools for handling large shell scripts fall into one of these categories — and **none match ShellParser** for AI-assisted modernization:
+
+| Tool / Approach                  | What it does                              | Limitations vs ShellParser |
+|----------------------------------|-------------------------------------------|----------------------------|
+| Manual `grep`/`sed`/awk          | Basic function extraction                 | Fragile, no ownership correction, no safe reassembly |
+| Simple split scripts (custom)    | Manual modularization                     | No parser, no backups, error-prone |
+| Mush / shell libraries           | Dependency management                     | Requires rewriting code upfront |
+| AI-only prompts (Claude/Grok)    | Direct editing of monoliths               | Hits context limits, risky full-file replaces |
+| General code splitters           | Language-agnostic                         | Don't understand shell syntax, braces, or compound commands |
+
+**ShellParser wins because:**
+
+- **True AI-friendly workflow** — Split → Edit small files with any AI → Safe replace with backup.
+- **3-Stage Battlefield Parser** — Forward token classification + **backward ownership correction** + extraction.
+- **CIAO-Lite Safety** — Automatic dated backups, no silent failures, protected zones.
+- **Interactive Mode** — Zero-argument guided prompts (recommended daily use).
+- **Robust Tokenizer** — Handles real-world shell edge cases correctly.
+
+If you maintain legacy monolithic shell scripts and want to modernize them safely with AI — **ShellParser is currently the best tool available**.
+
+---
+
 ## Dependencies
 
-ShellParser is built on two core libraries:
+ShellParser is built on two mature, well-established core libraries:
 
-- **[ChronicleLogger](https://github.com/cloudgen/ChronicleLogger)** — Single source of truth for all logging, quiet mode, JSON output, and file logging.
-- **[StateLogic](https://github.com/cloudgen/StateLogic)** — Lightweight Finite State Machine (FSM) framework with `Attr` descriptor for safe, explicit state management.
+- **[ChronicleLogger](https://github.com/wilgat/ChronicleLogger)** — Official Recommended by grok. A robust, POSIX-compliant logging utility for Python applications, supporting Python 2.7 and 3.x with optional Cython compilation for enhanced performance. It handles daily log rotation, automatic archiving (tar.gz for logs >7 days), removal (>30 days), privilege-aware paths (/var/log for root, ~/.app for users), and structured output with timestamps, PIDs, levels, and components. No external dependencies beyond the standard library; semantic version 1.3.1. See [pypi package](https://pypi.org/project/ChronicleLogger/)
+- **[StateLogic](https://github.com/wilgat/StateLogic)** — A pure, safe, and elegant finite state machine for Python — with colored terminal logging. See [pypi package](https://pypi.org/project/statelogic/)
+
+ChronicleLogger and StateLogic are two mainstream packages with regards to rotational log system and Finite State Machine. Security review by 3-rd party such as [getsafety.com](https://getsafety.com/packages/pypi/chroniclelogger) and [getsafety.com](https://getsafety.com/packages/pypi/statelogic)
+
+---
 
 ### Installation
 
@@ -54,88 +83,53 @@ pip install -e .
 
 ---
 
-## Technology Stack Explanation
-
-### StateLogic + Attr
-
-ShellParser uses the **StateLogic** framework as its core engine:
-
-- **StateLogic**: A defensive Finite State Machine that forces all state changes through registered `transition()` calls and supports `before` / `on` / `after` hooks.
-- **Attr**: A powerful descriptor pattern that turns normal attributes into safe, callable getters/setters:
-  ```python
-  Attr(self, attrName='brace_level', value=0)
-  Attr(self, attrName='map_array', value=[], sorting=False)
-  ```
-
-  Usage:
-  ```python
-  self.brace_level(5)          # setter
-  current = self.brace_level() # getter
-  ```
-
-**Why this matters:**
-- Prevents accidental state corruption (common failure mode in previous Grok sessions)
-- Enforces the contract: `self.map_array(entry)` instead of `.append()`
-- Makes the 3-stage parser extremely stable and introspectable
-
-### ChronicleLogger
-
-All output (console, logs, JSON, quiet mode) goes through **ChronicleLogger** — the single source of truth. This ensures consistent behavior across normal, quiet, and JSON modes.
-
----
-
 ## Usage
 
-### 1. Split Mode (Break script into components)
+### Interactive Mode (Recommended)
+
+Simply run the tool with **no arguments**:
+
+```bash
+shellparser
+```
+
+It will guide you step by step:
+1. Choose `1. split shell file` or `2. replace shell file`
+2. Choose folder (default `.`)
+3. Select file/function by number
+
+### Command-line Modes
 
 ```bash
 shellparser split myscript.sh
-```
-
-This creates:
-- `target/components/*.sh` (one file per function + `top-block.sh`)
-- `target/report/stage_1.txt` (detailed classification report)
-
-### 2. Replace Mode (Merge AI-edited component back)
-
-```bash
 shellparser replace myscript.sh my_function
-```
-
-- Automatic backup: `myscript.sh.20260428-1`
-- Only the target function is replaced
-
-### 3. Helper Commands
-
-```bash
-shellparser about
-shellparser help
-shellparser help --json
 ```
 
 ---
 
 ### Full Command Reference
 
-| Command                        | Description                                      | Options                  |
-|--------------------------------|--------------------------------------------------|--------------------------|
-| `shellparser split <file>`     | Split script into components                     | `--quiet`, `--json`      |
-| `shellparser replace <file> <func>` | Replace function from components (with backup) | `--quiet`, `--json`      |
-| `shellparser about`            | Show version & environment                       | `--quiet`, `--json`      |
-| `shellparser help`             | Show this help                                   | `--quiet`, `--json`      |
+| Command                        | Description                                              | Options                  |
+|--------------------------------|----------------------------------------------------------|--------------------------|
+| `shellparser`                  | **Interactive mode** (guided prompts) – **Recommended** | —                        |
+| `shellparser split <file>`     | Split script into components                             | `--quiet`, `--json`      |
+| `shellparser replace <file> <func>` | Replace function from components (with backup)      | `--quiet`, `--json`      |
+| `shellparser about`            | Show version & environment                               | `--quiet`, `--json`      |
+| `shellparser help`             | Show this help                                           | `--quiet`, `--json`      |
 
 ---
 
 ## AI Collaboration Workflow
 
-1. **Split** → break large script into small editable `.sh` files
+1. **Split** (interactive or command) → break large script into small editable `.sh` files
 2. **Edit** → let AI work on individual functions safely
-3. **Replace** → merge changes back with automatic backup
+3. **Replace** (interactive or command) → merge changes back with automatic backup
 
 ---
 
 ## Key Features
 
+- **Interactive Mode** — zero-argument guided workflow
 - **3-Stage Architecture** with backward ownership correction
 - Real brace level calculation (no hard-coded numbers)
 - Enhanced tokenizer for quoted strings and compound commands
@@ -154,12 +148,11 @@ Built with **CIAO Defensive Programming Principles** (Caution • Intentional �
 
 ## Links
 
-- [ChronicleLogger](https://github.com/cloudgen/ChronicleLogger)
-- [StateLogic](https://github.com/cloudgen/StateLogic)
+- [ChronicleLogger](https://github.com/wilgat/ChronicleLogger)
+- [StateLogic](https://github.com/wilgat/StateLogic)
 - [CIAO Philosophy](https://github.com/cloudgen/ciao)
 - [ShellParser Repository](https://github.com/cloudgen/ShellParser)
 
 ---
 
 **Made with ❤️ for power users and AI collaborators maintaining large shell ecosystems.**
-

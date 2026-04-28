@@ -6,6 +6,34 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ---
 
+## [1.0.1] - 2026-04-28
+
+### Added
+- **Interactive Mode** (zero-argument entry point) — now the recommended way to use the tool
+  - Prompts: `1. split shell file` or `2. replace shell file`
+  - Folder selection (default `.` or custom path)
+  - Smart file picker by number:
+    - For **split**: lists shell scripts (`.sh`, extension-less, `.bash`, etc., excluding common non-shell files)
+    - For **replace**: first selects function file from `target/components/`, then target shell script
+- Helper functions `_list_shell_scripts()` and `_pick_file()` for clean interactive UX
+- Proper detection of no-command case (including `--quiet` / `--json` only)
+
+### Changed
+- `main()` now routes no-argument calls to `interactive_mode()` before argparse
+- Interactive mode respects CIAO-Lite rules: single `ShellParserCore` instance, minimal changes, protected zones untouched
+- Helper functions defined in correct order to prevent NameError (Python nested function scoping)
+
+### Fixed
+- Scope/definition order issue that caused traceback when running `shellparser` with no arguments
+- Improved error messages and flow for missing `target/components/` during replace
+
+### Security & Stability
+- Interactive mode fully respects existing Protection Zones and single-core rule
+- No breaking changes to command-line interface
+- All previous safety features (backups, output control, etc.) remain intact
+
+---
+
 ## [1.0.0] - 2026-04-28
 
 ### Added

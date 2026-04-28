@@ -73,6 +73,10 @@
 #   - Use direct print() — ChronicleLogger is the SINGLE source of output
 # WILL BE REJECTED.
 #
+# All user-facing output MUST go through self.logger.log_message()
+# or ChronicleLogger. This protects quiet/JSON modes and keeps
+# output behavior consistent and anti-fragile.
+#
 # All changes must respect CIAO-Lite principles https://github.com/cloudgen/ciao :
 #   C - Caution, I - Intentional, A - Anti-fragile, O - Over-protects
 #
@@ -123,7 +127,7 @@ class ShellParserCore(StateLogic):
     CLASSNAME = "ShellParserCore"
     MAJOR_VERSION = 1
     MINOR_VERSION = 0
-    PATCH_VERSION = 0
+    PATCH_VERSION = 1
 
     @staticmethod
     def class_version():
@@ -478,33 +482,33 @@ class ShellParserCore(StateLogic):
             }
             print(json.dumps(help_data, indent=2))
         else:
-            self.logger.log_message("ShellParser — AI-Augmented Shell Script Component Manager")
-            self.logger.log_message("=" * 70)
-            self.logger.log_message(f"Version : {ShellParserCore.class_version()}")
-            self.logger.log_message("")
-            self.logger.log_message("Usage:")
-            self.logger.log_message("  shellparser <command> [--quiet] [--json]")
-            self.logger.log_message("")
-            self.logger.log_message("Available Commands:")
-            self.logger.log_message("  split <source_file>      Split shell script into target/components/*.sh")
-            self.logger.log_message("  replace <source_file> <func_name>   Replace function (with backup)")
-            self.logger.log_message("  about                    Show environment & version info")
-            self.logger.log_message("  help                     Show this help")
-            self.logger.log_message("")
-            self.logger.log_message("Examples:")
-            self.logger.log_message("  shellparser split myscript.sh")
-            self.logger.log_message("  shellparser replace myscript.sh my_function")
-            self.logger.log_message("  shellparser about")
-            self.logger.log_message("  shellparser help")
-            self.logger.log_message("")
-            self.logger.log_message("AI Collaboration Workflow:")
-            self.logger.log_message("  1. split   → break large script into small editable functions")
-            self.logger.log_message("  2. Edit individual *.sh files with AI")
-            self.logger.log_message("  3. replace → safely merge back with automatic backup")
-            self.logger.log_message("")
-            self.logger.log_message("Quiet / JSON Ready:")
-            self.logger.log_message("  --json implies quiet mode to prevent output pollution")
-            self.logger.log_message("=" * 70)
+            self.logger.prn("ShellParser — AI-Augmented Shell Script Component Manager")
+            self.logger.prn("=" * 70)
+            self.logger.prn(f"Version : {ShellParserCore.class_version()}")
+            self.logger.prn("")
+            self.logger.prn("Usage:")
+            self.logger.prn("  shellparser <command> [--quiet] [--json]")
+            self.logger.prn("")
+            self.logger.prn("Available Commands:")
+            self.logger.prn("  split <source_file>      Split shell script into target/components/*.sh")
+            self.logger.prn("  replace <source_file> <func_name>   Replace function (with backup)")
+            self.logger.prn("  about                    Show environment & version info")
+            self.logger.prn("  help                     Show this help")
+            self.logger.prn("")
+            self.logger.prn("Examples:")
+            self.logger.prn("  shellparser split myscript.sh")
+            self.logger.prn("  shellparser replace myscript.sh my_function")
+            self.logger.prn("  shellparser about")
+            self.logger.prn("  shellparser help")
+            self.logger.prn("")
+            self.logger.prn("AI Collaboration Workflow:")
+            self.logger.prn("  1. split   → break large script into small editable functions")
+            self.logger.prn("  2. Edit individual *.sh files with AI")
+            self.logger.prn("  3. replace → safely merge back with automatic backup")
+            self.logger.prn("")
+            self.logger.prn("Quiet / JSON Ready:")
+            self.logger.prn("  --json implies quiet mode to prevent output pollution")
+            self.logger.prn("=" * 70)
 
     def tokenize_line(self, line):
         """Real shell tokenizer - produces tokens while preserving important shell constructs.
@@ -1304,6 +1308,117 @@ class ShellParserCore(StateLogic):
 
         self._write_fn_file(target_dir, "stage_1.txt", report_lines)
 
+# =========================================================================
+# Interactive Mode Helpers - DEFINED BEFORE interactive_mode (Critical!)
+# =====================================================================
+def _list_shell_scripts(folder):
+    """Minimal helper - only for interactive mode"""
+    candidates = []
+    exclude = {'.c','.h','.txt','.md','.toml','.py','.pyc','.js','.jpeg',
+                '.jpg','.png','.gif','.bak','.log'}
+    for f in sorted(os.listdir(folder)):
+        if f.startswith('.'): 
+            continue
+        ext = os.path.splitext(f)[1].lower()
+        if ext in exclude:
+            continue
+        if ext == '.sh' or ext == '' or ext in ('.bash','.zsh','.ksh'):
+            full = os.path.join(folder, f)
+            if os.path.isfile(full):
+                candidates.append(full)
+    return candidates
+
+
+def _pick_file(candidates, label):
+    """Minimal picker"""
+    print(f"\n{label.capitalize()} found:")
+    for i, p in enumerate(candidates, 1):
+        print(f"{i:2d}. {os.path.basename(p)}")
+    while True:
+        sel = input(f"\nEnter number (1-{len(candidates)}): ").strip()
+        if sel.isdigit() and 1 <= int(sel) <= len(candidates):
+            return candidates[int(sel)-1]
+        print("Invalid selection.")
+
+
+def interactive_mode(logger):
+    """Interactive fallback when user runs the tool with no arguments."""
+    print("\n=== ShellParser Interactive Mode ===\n")
+    
+    print("1. split shell file")
+    print("2. replace shell file")
+    while True:
+        choice = input("\nEnter choice (1 or 2): ").strip()
+        if choice in ('1', '2'):
+            mode = 'split' if choice == '1' else 'replace'
+            break
+        print("Invalid choice. Please enter 1 or 2.")
+
+    print(f"\nCurrent folder: {os.getcwd()}")
+    folder = input("Use current folder (.) or enter path? [.] : ").strip()
+    folder = folder or "."
+    if not os.path.isdir(folder):
+        print(f"Error: Folder '{folder}' does not exist.")
+        return
+    if mode == 'split':
+        candidates = _list_shell_scripts(folder)
+        if not candidates:
+            print("No shell script candidates found.")
+            return
+        selected_file = _pick_file(candidates, "shell script")
+        
+        core = ShellParserCore(selected_file, logger)
+        core.output_enabled(True)
+        core.replace_mode(False)
+        core.source_file(selected_file)
+        core.state('backed_or_no_need')
+        core.start_parse()
+
+    else:  # replace
+        comp_dir = os.path.join(folder, "target", "components")
+        if not os.path.isdir(comp_dir):
+            print(f"Error: target/components/ not found in '{folder}'")
+            print("       Please run split first.")
+            return
+
+        comp_files = [f for f in sorted(os.listdir(comp_dir)) 
+                        if f.endswith('.sh') and os.path.isfile(os.path.join(comp_dir, f))]
+
+        if not comp_files:
+            print("No function files found in target/components/")
+            return
+
+        print(f"\nAvailable function files in {comp_dir}:")
+        for i, f in enumerate(comp_files, 1):
+            print(f"{i:2d}. {f}")
+        
+        while True:
+            sel = input(f"\nEnter number (1-{len(comp_files)}): ").strip()
+            if sel.isdigit() and 1 <= int(sel) <= len(comp_files):
+                func_name = os.path.splitext(comp_files[int(sel)-1])[0]
+                break
+            print("Invalid number.")
+
+        src_candidates = _list_shell_scripts(folder)
+        if src_candidates:
+            src_path = _pick_file(src_candidates, "target shell script")
+        else:
+            src_path = input("\nEnter full path to target shell script: ").strip()
+            if not os.path.isfile(src_path):
+                print("File not found.")
+                return
+
+        core = ShellParserCore(src_path, logger)
+        core.output_enabled(False)
+        core.replace_mode(True)
+        core.source_file(src_path)
+        core.source_func(func_name)
+        core.state('start_backup')
+        core.backup_source()
+
+    print(f"\nInteractive {mode} completed.")
+# =====================================================================
+    
 # =============================================================================
 def main():
     """ShellParser main() with single ShellParserCore call for safety.
@@ -1343,7 +1458,7 @@ def main():
 
     MAJOR_VERSION = 1
     MINOR_VERSION = 0
-    PATCH_VERSION = 0
+    PATCH_VERSION = 1
 
     logger = ChronicleLogger(logname=appname)
     appname=logger.logName()    
@@ -1352,6 +1467,13 @@ def main():
         logger.log_message(f"{appname} v{MAJOR_VERSION}.{MINOR_VERSION}.{PATCH_VERSION} ({__file__}) with the following:", component="main")
         logger.log_message(f" >> {ChronicleLogger.class_version()}", component="main")
         logger.log_message(f" >> {ShellParserCore.class_version()}", component="main")
+
+    # ==================== INTERACTIVE MODE WHEN NO COMMAND GIVEN ====================
+    # CIAO-Lite: Minimal change only at entry point. Single core rule respected.
+    if len(sys.argv) <= 1 or (len(sys.argv) == 2 and sys.argv[1] in ('--quiet', '--json')):
+        interactive_mode(logger)
+        return
+    # =================================================================================
 
     # Subcommand parser
     parser = argparse.ArgumentParser(description="ShellParser — AI-Augmented Shell Script Component Manager")
@@ -1384,6 +1506,7 @@ def main():
     if getattr(args, 'json', False):
         logger.quiet(True)
 
+
     # ==================== SINGLE CORE CALL ====================
     source_file = getattr(args, 'source_file', "dummy.sh")
     core = ShellParserCore(source_file, logger)
@@ -1410,7 +1533,6 @@ def main():
         core.show_help()
     else:
         parser.print_help()
-    # =========================================================================
-
+        
 if __name__ == '__main__':
     main()
