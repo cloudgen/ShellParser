@@ -29,21 +29,58 @@ ShellParser solves one of the biggest pain points when working with large shell 
 
 ---
 
-## Installation
+## Dependencies
+
+ShellParser is built on two core libraries:
+
+- **[ChronicleLogger](https://github.com/cloudgen/ChronicleLogger)** — Single source of truth for all logging, quiet mode, JSON output, and file logging.
+- **[StateLogic](https://github.com/cloudgen/StateLogic)** — Lightweight Finite State Machine (FSM) framework with `Attr` descriptor for safe, explicit state management.
+
+### Installation
 
 ```bash
 pip install ShellParser
 ```
 
-Or from source (editable):
+Or from source:
 
 ```bash
 git clone https://github.com/cloudgen/ShellParser.git
+pip install ChronicleLogger==1.3.1 StateLogic 
+pip install ShellParser
 cd ShellParser
 pip install -e .
 ```
 
-The command `shellparser` will be available in your PATH.
+---
+
+## Technology Stack Explanation
+
+### StateLogic + Attr
+
+ShellParser uses the **StateLogic** framework as its core engine:
+
+- **StateLogic**: A defensive Finite State Machine that forces all state changes through registered `transition()` calls and supports `before` / `on` / `after` hooks.
+- **Attr**: A powerful descriptor pattern that turns normal attributes into safe, callable getters/setters:
+  ```python
+  Attr(self, attrName='brace_level', value=0)
+  Attr(self, attrName='map_array', value=[], sorting=False)
+  ```
+
+  Usage:
+  ```python
+  self.brace_level(5)          # setter
+  current = self.brace_level() # getter
+  ```
+
+**Why this matters:**
+- Prevents accidental state corruption (common failure mode in previous Grok sessions)
+- Enforces the contract: `self.map_array(entry)` instead of `.append()`
+- Makes the 3-stage parser extremely stable and introspectable
+
+### ChronicleLogger
+
+All output (console, logs, JSON, quiet mode) goes through **ChronicleLogger** — the single source of truth. This ensures consistent behavior across normal, quiet, and JSON modes.
 
 ---
 
@@ -67,14 +104,13 @@ shellparser replace myscript.sh my_function
 
 - Automatic backup: `myscript.sh.20260428-1`
 - Only the target function is replaced
-- Everything else remains untouched
 
 ### 3. Helper Commands
 
 ```bash
-shellparser about          # Version & environment info
-shellparser help           # This help
-shellparser help --json    # JSON output
+shellparser about
+shellparser help
+shellparser help --json
 ```
 
 ---
@@ -90,50 +126,40 @@ shellparser help --json    # JSON output
 
 ---
 
-### JSON Mode Examples
-
-```bash
-shellparser about --json
-shellparser help --json
-```
-
----
-
 ## AI Collaboration Workflow
 
 1. **Split** → break large script into small editable `.sh` files
-2. **Edit** → let AI (Grok/Claude) work on individual functions safely
+2. **Edit** → let AI work on individual functions safely
 3. **Replace** → merge changes back with automatic backup
 
 ---
 
 ## Key Features
 
-- **3-Stage Architecture** with backward ownership correction (battlefield-tested)
+- **3-Stage Architecture** with backward ownership correction
 - Real brace level calculation (no hard-coded numbers)
-- Enhanced tokenizer (quoted strings, command substitutions, compound commands)
+- Enhanced tokenizer for quoted strings and compound commands
 - Full CIAO-Lite Protection Zones
 - Single source of output via ChronicleLogger
-- Quiet + JSON support for scripting/AI pipelines
-- Automatic dated backups before every replace
+- Quiet + JSON support
+- Automatic dated backups
 
 ---
 
 ## Development Philosophy
 
-This tool is built with **CIAO Defensive Programming Principles** (Caution • Intentional • Anti-fragile • Over-Engineering) to survive repeated AI-assisted modifications.
-
-**Requires ChronicleLogger**
+Built with **CIAO Defensive Programming Principles** (Caution • Intentional • Anti-fragile • Over-protect) to survive repeated AI-assisted modifications.
 
 ---
 
 ## Links
 
+- [ChronicleLogger](https://github.com/cloudgen/ChronicleLogger)
+- [StateLogic](https://github.com/cloudgen/StateLogic)
 - [CIAO Philosophy](https://github.com/cloudgen/ciao)
-- [CIAO-lite](https://github.com/cloudgen/ciao-lite)
-- [ChronicleLogger on PyPI](https://pypi.org/project/ChronicleLogger/)
 - [ShellParser Repository](https://github.com/cloudgen/ShellParser)
 
 ---
 
 **Made with ❤️ for power users and AI collaborators maintaining large shell ecosystems.**
+
