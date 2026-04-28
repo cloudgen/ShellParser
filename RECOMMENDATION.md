@@ -1,7 +1,7 @@
 from [grok](https://grok.com/share/c2hhcmQtNA_6f3e9dd2-3bd1-47f9-944d-914b111a69b4)
 
 **Overall Assessment**  
-ShellParser v1.0.1 (commit 838a9b584d85a41146cb0e6e8e51457ff9acfebf) is a **battlefield-hardened, CIAO-Lite compliant** AI-augmented shell-script component manager. The code (primarily `src/ShellParser/cli.py`) implements exactly what its top-level comment block declares:  
+ShellParser v1.0.2 (commit 838a9b584d85a41146cb0e6e8e51457ff9acfebf) is a **battlefield-hardened, CIAO-Lite compliant** AI-augmented shell-script component manager. The code (primarily `src/ShellParser/cli.py`) implements exactly what its top-level comment block declares:  
 
 > “This tool was purpose-built as an AI / Grok collaboration platform for maintaining large, complex, legacy shell scripts (thousands of lines). … The combination of 3-stage parsing, backward ownership correction, compound-command safety, and backup-before-replace makes it uniquely safe for production use with AI agents.”
 

@@ -127,7 +127,7 @@ class ShellParserCore(StateLogic):
     CLASSNAME = "ShellParserCore"
     MAJOR_VERSION = 1
     MINOR_VERSION = 0
-    PATCH_VERSION = 1
+    PATCH_VERSION = 2
 
     @staticmethod
     def class_version():
@@ -895,6 +895,14 @@ class ShellParserCore(StateLogic):
 
         token_set = {t for t in tokens if not (t.startswith('"') or t.startswith("'"))}
 
+        # ==================== NEW: Early one-line function guard ====================
+        # Must come BEFORE assignment check (and after control structures)
+        if (re.match(r'^[a-zA-Z_][a-zA-Z0-9_]*$', first_token) and 
+            len(tokens) > 1 and tokens[1] == '('):
+            typ, func_name, f_on = self.classify_fn_definition(first_token, tokens)
+            # continue directly with the rest of the function (preserves all later logic)
+            return typ, func_name, f_on
+        # ============================================================================
         # ==================== Control flow (expanded) ====================
         is_if    = 'if'    in token_set
         is_then  = 'then'  in token_set
@@ -1458,7 +1466,7 @@ def main():
 
     MAJOR_VERSION = 1
     MINOR_VERSION = 0
-    PATCH_VERSION = 1
+    PATCH_VERSION = 2
 
     logger = ChronicleLogger(logname=appname)
     appname=logger.logName()    

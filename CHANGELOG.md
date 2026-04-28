@@ -6,6 +6,22 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ---
 
+## [1.0.2] - 2026-04-28
+
+### Fixed
+- **One-line function classification** (`name() { command; }`)
+  - Lines containing `=` inside the function body (e.g. `double_line() { output_text ... }`) were incorrectly classified as `assignment`
+  - Fixed by moving the function definition check **before** the assignment check in `classify_non_special_line()`
+  - Now correctly reported as `fn_in_1_line` and properly extracted/owned
+  - Reuses existing battle-tested `classify_fn_definition()` logic (no new code paths)
+
+### Changed
+- Updated version to 1.0.2 in `main()` and `ShellParserCore`
+
+### Security & Stability
+- Change is fully compliant with CIAO-Lite: minimal, surgical, no protected zones touched
+- Preserves exact original behavior for all other line types and brace logic
+
 ## [1.0.1] - 2026-04-28
 
 ### Added

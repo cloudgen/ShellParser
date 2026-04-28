@@ -1,6 +1,6 @@
 # ShellParser - AI-Augmented Shell Script Component Manager
 
-[![Version](https://img.shields.io/badge/Version-1.0.1-blue?style=flat-square)](https://github.com/cloudgen/ShellParser)
+[![Version](https://img.shields.io/badge/Version-1.0.2-blue?style=flat-square)](https://github.com/cloudgen/ShellParser)
 [![License](https://img.shields.io/badge/License-MIT-green?style=flat-square)](LICENSE)
 [![CIAO](https://img.shields.io/badge/Philosophy-CIAO%20(Caution%20%E2%80%A2%20Intentional%20%E2%80%A2%20Anti--fragile%20%E2%80%A2%20Over--protect)-purple.svg)](https://github.com/cloudgen/ciao)
 [![Python](https://img.shields.io/badge/Python-3.8%2B-blue?style=flat-square)]()
@@ -149,7 +149,7 @@ Built with **CIAO Defensive Programming Principles** (Caution • Intentional �
 ---
 
 **Overall Assessment**  
-ShellParser v1.0.1 (commit 838a9b584d85a41146cb0e6e8e51457ff9acfebf) is a **battlefield-hardened, CIAO-Lite compliant** AI-augmented shell-script component manager. The code (primarily `src/ShellParser/cli.py`) implements exactly what its top-level comment block declares:  
+ShellParser v1.0.2 (commit 838a9b584d85a41146cb0e6e8e51457ff9acfebf) is a **battlefield-hardened, CIAO-Lite compliant** AI-augmented shell-script component manager. The code (primarily `src/ShellParser/cli.py`) implements exactly what its top-level comment block declares:  
 
 > “This tool was purpose-built as an AI / Grok collaboration platform for maintaining large, complex, legacy shell scripts (thousands of lines). … The combination of 3-stage parsing, backward ownership correction, compound-command safety, and backup-before-replace makes it uniquely safe for production use with AI agents.”
 

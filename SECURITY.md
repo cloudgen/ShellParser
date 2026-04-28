@@ -121,4 +121,4 @@ These protections exist because previous AI “improvements” repeatedly broke 
 ---
 
 **Last updated**: April 2026  
-**Version**: 1.0.1
+**Version**: 1.0.2
