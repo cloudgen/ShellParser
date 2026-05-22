@@ -126,7 +126,7 @@ class ShellParserCore(StateLogic):
 
     CLASSNAME = "ShellParserCore"
     MAJOR_VERSION = 1
-    MINOR_VERSION = 2
+    MINOR_VERSION = 0
     PATCH_VERSION = 1
 
     @staticmethod
@@ -174,10 +174,6 @@ class ShellParserCore(StateLogic):
         Attr(self, attrName='file_content', value=[])
         Attr(self, attrName='line', value='', autostrip=False)
         Attr(self, attrName='line_num', value=0)
-        Attr(self, attrName='docs_mode', value=False)
-        Attr(self, attrName='docs_mode', value=False)
-        Attr(self, attrName='placeholder_mode', value=False)   # ← NEW v2.1
-        Attr(self, attrName='in_open_quote', value=False)
         
         # map_lines for display only, don't use for processing
         Attr(self, attrName='map_lines', value=[], sorting=False)
@@ -264,20 +260,15 @@ class ShellParserCore(StateLogic):
             self.line(line)
             self.tokenize()
             self.next_line()
-        self.logger.log_message(f"Before last line", component="parser")        
-        self.last_line()
+
         if self.output_enabled():
             self.stage_1_report()
             self.stage_2_ownership()
-            if self.docs_mode():
-                self.stage_3_write_docs()
-            elif self.placeholder_mode():           # ← NEW
-                self.stage_3_create_placeholder()
-            else:
-                self.stage_3_extract_functions()
+            self.stage_3_extract_functions()
         else:
             # Replace mode: only update ownership map, no file output
             self.stage_2_ownership()
+            self.last_line()
         
     def afterLastLine(self):
         if self.replace_mode():
@@ -546,60 +537,39 @@ class ShellParserCore(StateLogic):
             - Previous simple regex approaches failed here — this token-based method survived
         =================================================================================
         """
-        # state handled via Attr (no parameter)
-        open_quote = self.in_open_quote()
-
-        if open_quote:
-            tokens = []
-            n = len(line)
-            j = 0
-            while j < n and line[j] != "'":
-                j += 1
-            if j < n:
-                tokens.append(line[0:j+1])
-                new_open_quote = False
-            else:
-                tokens.append(line)
-                new_open_quote = True
-            self.in_open_quote(new_open_quote)
-            return tokens
-
+        # Early exit for comment lines: first non-space char is '#'
         stripped = line.lstrip()
         if stripped and stripped[0] == '#':
-            return []
+            return []                     # ← as requested
 
         tokens = []
         i = 0
         n = len(line)
-        new_open_quote = False
-
         while i < n:
             c = line[i]
             if c.isspace():
                 i += 1
                 continue
 
+            # 1. Double-quoted string (whole thing = one token)
             if c == '"':
                 j = i + 1
                 while j < n and not (line[j] == '"' and (j == 0 or line[j-1] != '\\')):
                     j += 1
-                tokens.append(line[i:j+1] if j < n else line[i:])
-                i = j + 1 if j < n else n
+                tokens.append(line[i:j+1])
+                i = j + 1
                 continue
 
+            # 1. Single-quoted string (whole thing = one token)
             if c == "'":
                 j = i + 1
                 while j < n and line[j] != "'":
                     j += 1
-                if j < n:
-                    tokens.append(line[i:j+1])
-                    i = j + 1
-                else:
-                    tokens.append(line[i:])
-                    new_open_quote = True
-                    i = n
+                tokens.append(line[i:j+1])
+                i = j + 1
                 continue
 
+            # 4. $(...) command substitution (one token even with spaces)
             if line[i:i+2] == "$(":
                 count = 1
                 j = i + 2
@@ -613,6 +583,7 @@ class ShellParserCore(StateLogic):
                 i = j
                 continue
 
+            # 4. `...` backtick substitution (one token)
             if c == '`':
                 j = i + 1
                 while j < n and line[j] != '`':
@@ -621,11 +592,13 @@ class ShellParserCore(StateLogic):
                 i = j + 1
                 continue
 
-            if c in '(){};|&':
-                tokens.append(c)
+            # 2. Semicolon = separate token
+            if c == ';':
+                tokens.append(';')
                 i += 1
                 continue
 
+            # Identifier followed immediately by ( → split into two tokens: name + '('
             if (c.isalnum() or c == '_'):
                 j = i
                 while j < n and (line[j].isalnum() or line[j] == '_'):
@@ -633,22 +606,26 @@ class ShellParserCore(StateLogic):
                 token = line[i:j]
                 tokens.append(token)
                 i = j
+                # Make '(' a separate token
                 if i < n and line[i] == '(':
                     tokens.append('(')
                     i += 1
                 continue
 
+            # Other single-character tokens (including standalone '(' / ')' / '{' / '}' / '=')
+            if c in '(){}=;':
+                tokens.append(c)
+                i += 1
+                continue
+
+            # Normal token (e.g. VAR=12 was already handled above, operators, etc.)
             j = i
-            while j < n and not line[j].isspace() and line[j] not in '"\'`;$(){}|&':
+            while j < n and not line[j].isspace() and line[j] not in '"\'`;(){}':
                 j += 1
-            if j == i and i < n:
-                j = i + 1
             token = line[i:j]
             if token:
                 tokens.append(token)
             i = j
-
-        self.in_open_quote(new_open_quote)
         return tokens
 
     def classify_and_or_logic(self, tokens, stripped, raw):
@@ -918,14 +895,6 @@ class ShellParserCore(StateLogic):
 
         token_set = {t for t in tokens if not (t.startswith('"') or t.startswith("'"))}
 
-        # ==================== NEW: Early one-line function guard ====================
-        # Must come BEFORE assignment check (and after control structures)
-        if (re.match(r'^[a-zA-Z_][a-zA-Z0-9_]*$', first_token) and 
-            len(tokens) > 1 and tokens[1] == '('):
-            typ, func_name, f_on = self.classify_fn_definition(first_token, tokens)
-            # continue directly with the rest of the function (preserves all later logic)
-            return typ, func_name, f_on
-        # ============================================================================
         # ==================== Control flow (expanded) ====================
         is_if    = 'if'    in token_set
         is_then  = 'then'  in token_set
@@ -1211,19 +1180,8 @@ class ShellParserCore(StateLogic):
 
         CIAO-Lite Protection Zone
         =================================================================================
-        DO NOT refactor, simplify, replace with forward `func_order`, remove the reverse
-        traversal, or "clean up" this reassembly logic WITHOUT EXPLICIT USER INSTRUCTION.
-
-        WHY THE REVERSE LOGIC IS CORRECT AND MUST STAY:
-        - This exact reverse pass + func_names_array.append() pattern is the ONLY version
-          that has ever worked correctly on real, complex shell scripts.
-        - Forward logic (func_order + forward pass) PRODUCES INCORRECT OUTPUT
-        - Failing example for forward logic:
-        ```
-            }
-                output_text "plain" ""
-            empty_line() {
-        ```
+        DO NOT refactor, merge with other stages, or remove this method 
+        without explicit user instruction.
 
         General Purpose:
             Final stage that takes the corrected ownership map from Stage 2
@@ -1305,188 +1263,21 @@ class ShellParserCore(StateLogic):
             f.write('\n'.join(lines) + '\n')
         self.logger.log_message(f"  → {filepath}  ({len(lines)} lines)", component="extract")
 
-    # =============================================================================
-    # CIAO-Lite Protection Zone - split-docs Stage 3 (v2.0)
-    # DO NOT refactor, merge with classic split, alter markdown template,
-    # or remove without explicit user instruction.
-    # Must reuse exact Stage 2 map_array_for_file data.
-    # Markdown template defined in split-docs.md is sacred.
-    # =============================================================================
-    def stage_3_write_docs(self):
-        """Stage 3: Generate LLM-friendly markdown files in target/docs/
-
-        CIAO-Lite Protection Zone
-        =================================================================================
-        General Purpose:
-            Write one .md file per function (including top-block) optimized for
-            LLM training / documentation using the exact template from split-docs.md.
-
-        Current Logic:
-            - Reuses map_array_for_file (Stage 2 corrected ownership)
-            - Creates target/docs/ if missing
-            - Exact markdown structure with metadata + triple-backtick sh block
-            - Preserves 100% original function content and whitespace
-
-        Defensive Notes:
-            - Additive only — does not affect classic split or replace
-            - All output via ChronicleLogger
-            - Exact template enforcement for LLM compatibility
-        =================================================================================
-        """
-        if not self.output_enabled():
-            return
-
-        target_dir = "target/docs"
-        os.makedirs(target_dir, exist_ok=True)
-
-        arr = self.map_array_for_file()
-        if not arr:
-            self.logger.log_message("No parsed data available for docs generation", 
-                                  component="docs", level="warn")
-            return
-
-        # Group lines by corrected func_name (reuse Stage 2 data)
-        func_lines = {}
-        func_metadata = {}
-        for item in reversed(arr):   # reverse to restore original order
-            func_name = item.get('func_name', 'top-block')
-            if func_name not in func_lines:
-                func_lines[func_name] = []
-                func_metadata[func_name] = {
-                    'start': item['line_num'],
-                    'end': item['line_num'],
-                    'count': 0
-                }
-            func_lines[func_name].append(item['raw'])
-            func_metadata[func_name]['end'] = item['line_num']
-            func_metadata[func_name]['count'] += 1
-
-        timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        source_path = os.path.abspath(self.source_file())
-
-        for func, lines in func_lines.items():
-            meta = func_metadata.get(func, {})
-            md_content = [
-                f"# Function: {func}",
-                "",
-                "## Metadata",
-                f"- Extracted: {timestamp}",
-                f"- Source File: {source_path}",
-                f"- Line Range: {meta.get('start', 0)}-{meta.get('end', 0)}",
-                f"- Line Count: {meta.get('count', len(lines))}",
-                "",
-                "## Description",
-                "<!-- Optional: First comment block summary if available -->",
-                "",
-                "```sh"
-            ]
-            md_content.extend(lines)
-            md_content.append("```")
-            md_content.append("")
-
-            filepath = os.path.join(target_dir, f"{func}.md")
-            with open(filepath, 'w', encoding='utf-8') as f:
-                f.write('\n'.join(md_content))
-
-            self.logger.log_message(f"  → {filepath}  ({len(lines)} lines)", component="docs")
-
-        self.logger.log_message(f"Stage 3: Generated LLM-friendly docs to ./{target_dir}/", 
-                              component="docs")
-    def stage_3_create_placeholder(self):
-        """Stage 3: Mass in-place placeholder replace using existing replace_function() (v2.1)
-
-        CIAO-Lite Protection Zone — Permanent Defensive Rule Enforced (parser-architecture.md §3.2)
-        =================================================================================
-        MUST reuse the battle-tested `replace_function()` one by one.
-        Backup is handled once via FSM in main().
-        NO reimplementation of grouping or reassembly logic.
-
-        REAL USER INTENTION (MAIN-REQUIREMENTS.md + parser-architecture.md):
-        - Backup FIRST (via FSM)
-        - Replace every function body (except top-block) with minimal clean placeholder
-        - Save individual .sh placeholders + full placeholders.sh into target/placeholder.YYYYMMDD-N/
-        - Top-block and shebang remain 100% untouched
-        =================================================================================
-        """
-        if not self.output_enabled():
-            return
-
-        # === Dated placeholder directory (SINGLE + INDIVIDUAL files) ===
-        date_str = datetime.now().strftime("%Y%m%d")
-        counter = 1
-        while True:
-            placeholder_base = f"target/placeholder.{date_str}-{counter}"
-            if not os.path.exists(placeholder_base):
-                break
-            counter += 1
-        os.makedirs(placeholder_base, exist_ok=True)
-
-        # === Create target/components/ (critical missing step) ===
-        os.makedirs("target/components", exist_ok=True)
-
-        arr = self.map_array_for_file()
-        if not arr:
-            self.logger.log_message("No parsed data available", component="placeholder", level="error")
-            return
-
-        # Placeholder template (minimal, clean, matches requirements)
-        placeholder_template = [
-            "    # Placeholder - to be implemented",
-            '    echo "TODO: implement {func_name}()"',
-            "    return 0"
-        ]
-
-        # Collect functions to replace (preserve original encounter order)
-        functions_to_replace = []
-        for item in reversed(arr):
-            f_name = item.get('func_name', '')
-            if f_name and f_name not in ("", "top-block", "main-entry") and f_name not in functions_to_replace:
-                functions_to_replace.append(f_name)
-
-        # Generate placeholders → write to components/ AND to dated placeholder dir
-        for func_name in functions_to_replace:
-            placeholder_content = [f"{func_name}() {{"] + \
-                [tmpl.format(func_name=func_name) for tmpl in placeholder_template] + \
-                ["}"]
-
-            # Write to components/ so replace_function() can consume it (sacred path)
-            self._write_fn_file("target/components", f"{func_name}.sh", placeholder_content)
-
-            # Also save individual clean placeholder to dated dir (per requirements)
-            self._write_fn_file(placeholder_base, f"{func_name}.sh", placeholder_content)
-
-        # === CRITICAL: Reuse the existing reliable replace_function() one by one ===
-        # This is the exact pattern mandated by parser-architecture.md §3.2
-        for func_name in functions_to_replace:
-            self.source_func(func_name)   # set target function
-            self.replace_function()       # ← Sacred battle-tested mechanism
-
-        # === Save full placeholders.sh into dated dir ===
-        with open(self.source_file(), 'r', encoding='utf-8') as f:
-            full_placeholders = f.read()
-        single_file = os.path.join(placeholder_base, "placeholders.sh")
-        with open(single_file, 'w', encoding='utf-8') as f:
-            f.write(full_placeholders)
-
-        self.logger.log_message(f"Placeholder skeletons applied (dated dir: {placeholder_base}/)", 
-                              component="placeholder")
-        self.logger.log_message(f"Source script updated in-place with placeholders", component="placeholder")
-        self.logger.log_message(f"Individual .sh placeholders + full script saved to {placeholder_base}/", component="placeholder")
-
     def onTokenize(self):
         """Thin FSM hook → delegates to stage_1_parse()
         CIAO-Lite Protection Zone
         =================================================================================
         DO NOT simplify, refactor, or remove this method without explicit user instruction.
+        This is the official entry point called by the StateLogic FSM.
         =================================================================================
         """
         line = self.line()                    # raw line (autostrip=False)
-        tokens = self.tokenize_line(line)     # original signature only
+        tokens = self.tokenize_line(line)     # real tokens
         indent = self.calculate_indent(line)
 
         # Stage 1: Full classification + state updates
         self.stage_1_parse(line, tokens, indent)
-                
+        
     def stage_1_report(self):
         """Stage 1 Report"""
         if not self.output_enabled():
@@ -1517,165 +1308,117 @@ class ShellParserCore(StateLogic):
 
         self._write_fn_file(target_dir, "stage_1.txt", report_lines)
 
-    # =====================================================================
-    # Interactive Mode Helpers - DEFINED BEFORE interactive_mode (Critical!)
-    # =====================================================================
-    @staticmethod
-    def _list_shell_scripts(folder):
-        """Minimal helper - only for interactive mode"""
-        candidates = []
-        exclude = {'.c','.h','.txt','.md','.toml','.py','.pyc','.js','.jpeg',
-                   '.jpg','.png','.gif','.bak','.log'}
-        for f in sorted(os.listdir(folder)):
-            if f.startswith('.'): 
-                continue
-            ext = os.path.splitext(f)[1].lower()
-            if ext in exclude:
-                continue
-            if ext == '.sh' or ext == '' or ext in ('.bash','.zsh','.ksh'):
-                full = os.path.join(folder, f)
-                if os.path.isfile(full):
-                    candidates.append(full)
-        return candidates
+# =========================================================================
+# Interactive Mode Helpers - DEFINED BEFORE interactive_mode (Critical!)
+# =====================================================================
+def _list_shell_scripts(folder):
+    """Minimal helper - only for interactive mode"""
+    candidates = []
+    exclude = {'.c','.h','.txt','.md','.toml','.py','.pyc','.js','.jpeg',
+                '.jpg','.png','.gif','.bak','.log'}
+    for f in sorted(os.listdir(folder)):
+        if f.startswith('.'): 
+            continue
+        ext = os.path.splitext(f)[1].lower()
+        if ext in exclude:
+            continue
+        if ext == '.sh' or ext == '' or ext in ('.bash','.zsh','.ksh'):
+            full = os.path.join(folder, f)
+            if os.path.isfile(full):
+                candidates.append(full)
+    return candidates
 
-    @staticmethod
-    def _pick_file(candidates, label):
-        """Minimal picker"""
-        print(f"\n{label.capitalize()} found:")   # temporary safe print only inside interactive picker
-        for i, p in enumerate(candidates, 1):
-            print(f"{i:2d}. {os.path.basename(p)}")
-        while True:
-            sel = input(f"\nEnter number (1-{len(candidates)}): ").strip()
-            if sel.isdigit() and 1 <= int(sel) <= len(candidates):
-                return candidates[int(sel)-1]
-            print("Invalid selection.")
+
+def _pick_file(candidates, label):
+    """Minimal picker"""
+    print(f"\n{label.capitalize()} found:")
+    for i, p in enumerate(candidates, 1):
+        print(f"{i:2d}. {os.path.basename(p)}")
+    while True:
+        sel = input(f"\nEnter number (1-{len(candidates)}): ").strip()
+        if sel.isdigit() and 1 <= int(sel) <= len(candidates):
+            return candidates[int(sel)-1]
+        print("Invalid selection.")
+
 
 def interactive_mode(logger):
-    """ShellParser interactive mode - recommended daily workflow (v2.1+).
-
-    CIAO-Lite Protection Zone
-    =================================================================================
-    DO NOT refactor, simplify, remove menu options, change numbering, or bypass 
-    ShellParserCore / Attr flags without explicit user instruction.
-
-    General Purpose:
-        User-friendly numbered menu supporting ALL commands including the new 
-        placeholder command (v2.1). Smart file/component selection using existing 
-        helpers. Exact reuse of main() core-setup pattern for consistency.
-
-    Current Logic:
-        - Welcome banner via logger.prn()
-        - Menu loop (1=split, 2=replace, 3=split-docs, 4=placeholder, 5=about/help, 0=exit)
-        - For split / split-docs / placeholder: list shell scripts → pick → configure Attrs → run FSM
-        - For replace: list target/components/*.sh → pick func → pick source script → run backup/replace
-        - about/help use minimal dummy core (JSON disabled)
-        - All output ONLY via ChronicleLogger (logger.prn / log_message)
-
-    Defensive Notes:
-        - Matches interactive-mode.md, milestones.md, parameters.md, attr-contract.md exactly
-        - placeholder_mode=True only for option 4 (preserves top-block per parser-architecture.md)
-        - Single ShellParserCore instance per action (sacred main() pattern)
-        - Graceful fallbacks when no files/components found
-        - No direct print() except inside _pick_file (legacy safe usage)
-    =================================================================================
-    """
-    logger.prn("\n=== ShellParser Interactive Mode (v2.1) ===")
-    logger.prn("AI-Augmented Shell Script Component Manager")
-    logger.prn("=" * 70)
-
+    """Interactive fallback when user runs the tool with no arguments."""
+    print("\n=== ShellParser Interactive Mode ===\n")
+    
+    print("1. split shell file")
+    print("2. replace shell file")
     while True:
-        logger.prn("\nAvailable actions:")
-        logger.prn("  1. split shell file          → target/components/*.sh")
-        logger.prn("  2. replace shell file        → safe function replacement + backup")
-        logger.prn("  3. split-docs                → target/docs/*.md (LLM training ready)")
-        logger.prn("  4. placeholder               → replace all functions with placeholders (keep top-block)")
-        logger.prn("  5. about / help              → version & usage info")
-        logger.prn("  0. exit")
-
-        choice = input("\nEnter choice (0-5): ").strip()
-
-        if choice == '0':
-            logger.prn("Goodbye!")
+        choice = input("\nEnter choice (1 or 2): ").strip()
+        if choice in ('1', '2'):
+            mode = 'split' if choice == '1' else 'replace'
             break
+        print("Invalid choice. Please enter 1 or 2.")
 
-        elif choice == '5':
-            # about / help via dummy core (matches main() pattern)
-            core = ShellParserCore("dummy.sh", logger)
-            core.is_json(False)
-            core.show_about()
-            continue
-
-        elif choice == '2':  # replace - special two-step selection
-            comp_dir = os.path.join("target", "components")
-            if not os.path.exists(comp_dir):
-                logger.prn("Error: target/components/ not found. Run 'split' first.")
-                continue
-
-            comp_candidates = [os.path.join(comp_dir, f) 
-                             for f in sorted(os.listdir(comp_dir)) 
-                             if f.endswith('.sh') and os.path.isfile(os.path.join(comp_dir, f))]
-            if not comp_candidates:
-                logger.prn("No components found in target/components/.")
-                continue
-
-            comp_path = ShellParserCore._pick_file(comp_candidates, "component")
-            func_name = os.path.basename(comp_path)[:-3]  # strip .sh
-
-            src_candidates = ShellParserCore._list_shell_scripts(".")
-            if not src_candidates:
-                logger.prn("No shell scripts found in current directory.")
-                continue
-
-            source_file = ShellParserCore._pick_file(src_candidates, "source script")
-
-            # exact replace flow from main()
-            core = ShellParserCore(source_file, logger)
-            core.output_enabled(False)
-            core.replace_mode(True)
-            core.source_file(source_file)
-            core.source_func(func_name)
-            core.state('start_backup')
-            core.backup_source()
-            logger.prn(f"\nReplace of '{func_name}' completed (backup created).")
-            continue
-
-        # Common path for split / split-docs / placeholder
-        if choice == '1':      # split
-            mode_docs = False
-            mode_placeholder = False
-            action_name = "split"
-        elif choice == '3':    # split-docs
-            mode_docs = True
-            mode_placeholder = False
-            action_name = "split-docs"
-        elif choice == '4':    # placeholder (v2.1)
-            mode_docs = False
-            mode_placeholder = True
-            action_name = "placeholder"
-        else:
-            logger.prn("Invalid choice.")
-            continue
-
-        candidates = ShellParserCore._list_shell_scripts(".")
+    print(f"\nCurrent folder: {os.getcwd()}")
+    folder = input("Use current folder (.) or enter path? [.] : ").strip()
+    folder = folder or "."
+    if not os.path.isdir(folder):
+        print(f"Error: Folder '{folder}' does not exist.")
+        return
+    if mode == 'split':
+        candidates = _list_shell_scripts(folder)
         if not candidates:
-            logger.prn(f"No shell scripts found for {action_name}.")
-            continue
-
-        source_file = ShellParserCore._pick_file(candidates, "shell script")
-
-        # exact core setup matching main() + attr-contract.md
-        core = ShellParserCore(source_file, logger)
-        core.is_json(False)
-        core.docs_mode(mode_docs)
-        core.placeholder_mode(mode_placeholder)
+            print("No shell script candidates found.")
+            return
+        selected_file = _pick_file(candidates, "shell script")
+        
+        core = ShellParserCore(selected_file, logger)
         core.output_enabled(True)
         core.replace_mode(False)
-        core.source_file(source_file)
+        core.source_file(selected_file)
         core.state('backed_or_no_need')
         core.start_parse()
 
-        logger.prn(f"\n{action_name.capitalize()} completed successfully.")
+    else:  # replace
+        comp_dir = os.path.join(folder, "target", "components")
+        if not os.path.isdir(comp_dir):
+            print(f"Error: target/components/ not found in '{folder}'")
+            print("       Please run split first.")
+            return
 
+        comp_files = [f for f in sorted(os.listdir(comp_dir)) 
+                        if f.endswith('.sh') and os.path.isfile(os.path.join(comp_dir, f))]
+
+        if not comp_files:
+            print("No function files found in target/components/")
+            return
+
+        print(f"\nAvailable function files in {comp_dir}:")
+        for i, f in enumerate(comp_files, 1):
+            print(f"{i:2d}. {f}")
+        
+        while True:
+            sel = input(f"\nEnter number (1-{len(comp_files)}): ").strip()
+            if sel.isdigit() and 1 <= int(sel) <= len(comp_files):
+                func_name = os.path.splitext(comp_files[int(sel)-1])[0]
+                break
+            print("Invalid number.")
+
+        src_candidates = _list_shell_scripts(folder)
+        if src_candidates:
+            src_path = _pick_file(src_candidates, "target shell script")
+        else:
+            src_path = input("\nEnter full path to target shell script: ").strip()
+            if not os.path.isfile(src_path):
+                print("File not found.")
+                return
+
+        core = ShellParserCore(src_path, logger)
+        core.output_enabled(False)
+        core.replace_mode(True)
+        core.source_file(src_path)
+        core.source_func(func_name)
+        core.state('start_backup')
+        core.backup_source()
+
+    print(f"\nInteractive {mode} completed.")
+# =====================================================================
+    
 # =============================================================================
 def main():
     """ShellParser main() with single ShellParserCore call for safety.
@@ -1714,56 +1457,47 @@ def main():
     appname = 'ShellParser'
 
     MAJOR_VERSION = 1
-    MINOR_VERSION = 2   # v2.0 milestone
+    MINOR_VERSION = 0
     PATCH_VERSION = 1
 
     logger = ChronicleLogger(logname=appname)
-    appname = logger.logName()
-    basedir = logger.baseDir()
-
+    appname=logger.logName()    
+    basedir=logger.baseDir()
     if logger.isDebug():
         logger.log_message(f"{appname} v{MAJOR_VERSION}.{MINOR_VERSION}.{PATCH_VERSION} ({__file__}) with the following:", component="main")
         logger.log_message(f" >> {ChronicleLogger.class_version()}", component="main")
         logger.log_message(f" >> {ShellParserCore.class_version()}", component="main")
 
-    # ==================== INTERACTIVE MODE ====================
+    # ==================== INTERACTIVE MODE WHEN NO COMMAND GIVEN ====================
+    # CIAO-Lite: Minimal change only at entry point. Single core rule respected.
     if len(sys.argv) <= 1 or (len(sys.argv) == 2 and sys.argv[1] in ('--quiet', '--json')):
         interactive_mode(logger)
         return
-    # ========================================================
+    # =================================================================================
 
     # Subcommand parser
     parser = argparse.ArgumentParser(description="ShellParser — AI-Augmented Shell Script Component Manager")
     parser.add_argument('--quiet', action='store_true', help='Suppress non-essential output')
     parser.add_argument('--json',  action='store_true', help='Output success status in JSON')
-
+    # Global options available to ALL subcommands (including help & about)
+        
     subparsers = parser.add_subparsers(dest='command', required=True, help='Command to run')
 
-    # Existing commands
-    split_p = subparsers.add_parser('split', help='Split shell script into target/components/*.sh')
+    split_p = subparsers.add_parser('split', help='Split shell script into component functions')
     split_p.add_argument('source_file', help='Path to the shell script')
 
     replace_p = subparsers.add_parser('replace', help='Replace a function from target/components/')
     replace_p.add_argument('source_file', help='Path to original shell script')
     replace_p.add_argument('func_name', help='Function name to replace')
 
-    # New v2.0 command
-    docs_p = subparsers.add_parser('split-docs', help='Split into LLM-friendly markdown (target/docs/*.md)')
-    docs_p.add_argument('source_file', help='Path to the shell script')
-
-    placeholder_p = subparsers.add_parser('placeholder', 
-        help='Replace all functions (except top-block) with placeholder skeletons')
-    placeholder_p.add_argument('source_file', help='Path to the shell script')
-
     subparsers.add_parser('about', help='Show environment & version info')
     subparsers.add_parser('help', help='Show this help')
 
-    # Global options on ALL subcommands
-    for sub in [split_p, replace_p, docs_p, 
-                subparsers.choices['about'], subparsers.choices['help']]:
+    # Global options available to ALL subcommands (including help & about)
+    for sub in [split_p, replace_p, subparsers.choices['about'], subparsers.choices['help']]:
         sub.add_argument('--quiet', action='store_true', help='Suppress non-essential output')
         sub.add_argument('--json',  action='store_true', help='Output success status in JSON')
-
+        
     args = parser.parse_args()
 
     # Apply quiet/json settings
@@ -1772,40 +1506,27 @@ def main():
     if getattr(args, 'json', False):
         logger.quiet(True)
 
+
     # ==================== SINGLE CORE CALL ====================
     source_file = getattr(args, 'source_file', "dummy.sh")
     core = ShellParserCore(source_file, logger)
+
     core.is_json(getattr(args, 'json', False))
 
+    # Output control switch
     if args.command == 'split':
-        core.docs_mode(False)           # ← New
         core.output_enabled(True)
         core.replace_mode(False)
         core.source_file(source_file)
         core.state('backed_or_no_need')
         core.start_parse()
-    elif args.command == 'placeholder':           # ← NEW
-        core.docs_mode(False)
-        core.placeholder_mode(True)               # ← NEW
-        core.output_enabled(True)
-        core.replace_mode(False)
-        core.source_file(source_file)
-        core.state('start_backup')                # ← Sacred: backup FIRST (same as replace)
-        core.backup_source()
     elif args.command == 'replace':
-        core.output_enabled(False)
+        core.output_enabled(False)   # prevent overwriting components during replace
         core.replace_mode(True)
         core.source_file(source_file)
         core.source_func(args.func_name)
         core.state('start_backup')
         core.backup_source()
-    elif args.command == 'split-docs':
-        core.docs_mode(True)           # ← New
-        core.output_enabled(True)
-        core.replace_mode(False)
-        core.source_file(source_file)
-        core.state('backed_or_no_need')
-        core.start_parse()          # parser will call stage_3_write_docs via extension point
     elif args.command == 'about':
         core.show_about()
     elif args.command == 'help':

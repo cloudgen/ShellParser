@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "ShellParser"
-version = "1.0.2"
+version = "1.2.1"
 description = "A robust command-line tool for managing multiple projects that follow a prefix-suffix naming convention."
 readme = "README.md"
 requires-python = ">=3.8"

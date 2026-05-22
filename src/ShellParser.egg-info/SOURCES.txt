@@ -1,0 +1,13 @@
+LICENSE.md
+README.md
+pyproject.toml
+src/setup.py
+src/ShellParser/__init__.py
+src/ShellParser/__main__.py
+src/ShellParser/cli.py
+src/ShellParser.egg-info/PKG-INFO
+src/ShellParser.egg-info/SOURCES.txt
+src/ShellParser.egg-info/dependency_links.txt
+src/ShellParser.egg-info/entry_points.txt
+src/ShellParser.egg-info/requires.txt
+src/ShellParser.egg-info/top_level.txt
