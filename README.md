@@ -1,11 +1,11 @@
 # ShellParser - AI-Augmented Shell Script Component Manager
 
-[![Version](https://img.shields.io/badge/Version-1.2.0-blue?style=flat-square)](https://github.com/cloudgen/ShellParser)
-[![License](https://img.shields.io/badge/License-MIT-green?style=flat-square)](LICENSE)
+[![Version](https://img.shields.io/badge/Version-1.2.1-blue?style=flat-square)](https://github.com/cloudgen/ShellParser)
+[![License](https://img.shields.io/badge/License-MIT-green?style=flat-square)](LICENSE.md)
 [![CIAO](https://img.shields.io/badge/Philosophy-CIAO%20(Caution%20%E2%80%A2%20Intentional%20%E2%80%A2%20Anti--fragile%20%E2%80%A2%20Over--protect)-purple.svg)](https://github.com/cloudgen/ciao)
 [![Python](https://img.shields.io/badge/Python-3.8%2B-blue?style=flat-square)]()
 
-**Officially Reviewed & Recommended by Grok**
+**Repository:** [github.com/cloudgen/ShellParser](https://github.com/cloudgen/ShellParser)
 
 **Now with v2.0 `split-docs` — LLM-friendly markdown output!**
 
@@ -15,7 +15,18 @@
 
 ShellParser is a **battlefield-hardened** tool that turns massive monolithic shell scripts into small, AI-editable components — with full bidirectional safety.
 
-### v2.0 New Feature — `split-docs`
+### Identity (SSOT)
+
+| Field | Value |
+|-------|--------|
+| Product name | ShellParser |
+| Version | **1.2.1** (`pyproject.toml`, package `__version__`, runtime core) |
+| Primary CLI command | **`shellparser`** |
+| Compatibility alias | `shell-parser` (same entry point) |
+| Package import | `ShellParser` |
+| Install | local Python package (`pip install` / editable) |
+
+### v2.0 Feature — `split-docs`
 
 - Generates clean, LLM-optimized markdown files in `target/docs/`
 - Perfect for AI training, documentation, and context injection
@@ -25,13 +36,14 @@ ShellParser is a **battlefield-hardened** tool that turns massive monolithic she
 
 ## Key Features
 
-- **Interactive Mode** (recommended daily workflow)
+- **Interactive Mode** (recommended daily workflow; empty argv)
 - Classic `split` → `target/components/*.sh`
-- **New**: `split-docs` → `target/docs/*.md` (LLM-ready)
+- **`split-docs`** → `target/docs/*.md` (LLM-ready)
 - Safe `replace` with automatic dated backups
+- `placeholder` mass rewrite (backup first; keeps top-block)
 - 3-stage parser with real brace calculation + enhanced tokenizer
 - Full CIAO-Lite Protection Zones
-- ChronicleLogger as Single Source of Truth
+- ChronicleLogger as Single Source of Truth for output
 - `--quiet` / `--json` support
 
 ---
@@ -45,11 +57,14 @@ shellparser
 ```
 
 Menu:
-```
+
+```text
 1. split shell file          → target/components/*.sh
 2. replace shell file        → safe function replacement + backup
 3. split-docs                → target/docs/*.md (LLM training ready)
-4. about / help              → version & usage info
+4. placeholder               → placeholder rewrite (keep top-block)
+5. about / help              → version & usage info
+0. exit
 ```
 
 ### Command Line
@@ -58,11 +73,14 @@ Menu:
 # Classic split
 shellparser split myscript.sh
 
-# New v2.0: LLM-friendly markdown
+# LLM-friendly markdown
 shellparser split-docs myscript.sh
 
 # Safe replace
 shellparser replace myscript.sh my_function
+
+# Mass placeholder (with backup)
+shellparser placeholder myscript.sh
 
 # Info
 shellparser about
@@ -75,17 +93,17 @@ All commands support `--quiet` and `--json`.
 
 ## Output Structure (Target Project)
 
-```bash
+```text
 {project-root}/
 ├── myscript.sh
 ├── target/
 │   ├── components/          # .sh files (classic split)
-│   └── docs/                # .md files (new split-docs) ← v2.0
-├── myscript.sh.20260510-1   # Automatic backup
+│   └── docs/                # .md files (split-docs)
+├── myscript.sh.20260510-1   # Automatic backup (replace / placeholder)
 └── ...
 ```
 
-**Example `target/docs/my_function.md`** (exact format):
+**Example `target/docs/my_function.md`:**
 
 ```markdown
 # Function: my_function
@@ -109,11 +127,11 @@ my_function() {
 
 ---
 
-## AI Collaboration Workflow (v2.0)
+## AI Collaboration Workflow
 
-1. `split` or `split-docs` → break script into small files
-2. Edit individual `.sh` or `.md` files with Grok/Claude/etc.
-3. `replace` → safely merge changes back with backup
+1. `split` or `split-docs` → break script into small files  
+2. Edit individual `.sh` or `.md` files with an AI assistant  
+3. `replace` → safely merge changes back with backup  
 
 ---
 
@@ -126,22 +144,34 @@ pip install ShellParser
 Or from source:
 
 ```bash
-pip install -e .
+pip install -e ".[test]"
 ```
+
+---
+
+## Tests
+
+```bash
+pytest
+# or
+./build.sh test
+```
+
+Product law: `docs/requirements/`. Verification map: `docs/reviews/test-plan.md`.
 
 ---
 
 ## Requirements & Philosophy
 
-- Built with strict **CIAO-Lite** principles
-- All output through **ChronicleLogger**
-- 3-stage parser is sacred (forward → backward ownership → extract)
-- Protection Zones prevent regression from AI-assisted edits
+- Built with strict **CIAO-Lite** principles  
+- All product output through **ChronicleLogger** (JSON mode may emit one JSON object on stdout intentionally)  
+- 3-stage parser is sacred (forward → backward ownership → extract)  
+- Protection Zones prevent regression from AI-assisted edits  
 
-See full documentation in `docs/requirements/`.
+See `docs/requirements/` for enforceable product law.
 
 ---
 
-**Version 1.2.0** — Milestone v2.0 (split-docs) released May 2026.
+**Version 1.2.1** — identity SSOT alignment (console name, version, repository).
 
 **Made for AI-augmented shell script maintenance.**

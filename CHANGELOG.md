@@ -6,6 +6,22 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ---
 
+## [1.2.1] - 2026-08-11
+
+### Fixed
+- **`replace` after backup** — Stage 2 ownership now always applies `replace_function` in replace mode so nested FSM re-entrancy from `after_backup_source` cannot skip the rewrite (backup-first preserved)
+- **Empty-parse error path** — uses ChronicleLogger instead of raw `print`
+- **Top-block / shebang on replace** — shebang detected from stripped text (`#!`); Stage 2 reassigns file-leading shebang/comments/blanks to `top-block` so replace no longer deletes preamble when rewriting one function
+
+### Changed
+- **Identity SSOT**: primary console command `shellparser` (alias `shell-parser`); package/runtime version **1.2.1**; repository URLs `github.com/cloudgen/ShellParser`
+- **Help** lists `split-docs` and `placeholder`
+- **Dependencies**: declare `StateLogic>=1.2.0` alongside ChronicleLogger
+
+### Added
+- Product requirements under `docs/requirements/` + review maps under `docs/reviews/`
+- Pytest suite `tests/test_shellparser_core.py` (TP-ID cases for packaging, CLI, domain, backup, errors)
+
 ## [1.0.2] - 2026-04-28
 
 ### Fixed

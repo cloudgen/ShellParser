@@ -7,7 +7,7 @@ set -eu
 # =============================================
 
 PROJECT="ShellParser"
-PKG_NAME="shell-parser"
+PKG_NAME="shellparser"
 
 # Get version from package (fallback to unknown)
 VERSION=$(python3 - <<'PY'

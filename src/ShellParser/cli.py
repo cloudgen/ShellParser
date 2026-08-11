@@ -278,6 +278,14 @@ class ShellParserCore(StateLogic):
         else:
             # Replace mode: only update ownership map, no file output
             self.stage_2_ownership()
+            # =============================================================================
+            # CIAO-Lite Protection Zone (replace completion — 2026-08-11)
+            # Nested start_parse() from after_backup_source can leave last_line/split_file
+            # FSM re-entrancy incomplete; still MUST apply replace after Stage 2 ownership.
+            # Do NOT remove without explicit redesign; keep backup-first contract.
+            # =============================================================================
+            if self.replace_mode():
+                self.replace_function()
         
     def afterLastLine(self):
         if self.replace_mode():
@@ -349,7 +357,12 @@ class ShellParserCore(StateLogic):
         # === REBUILD SCRIPT WITH REPLACED FUNCTION ===
         arr = self.map_array_for_file()
         if not arr:
-            print("Error: No parsed data available")
+            # Output SSOT: ChronicleLogger only (no raw print on error paths)
+            self.logger.log_message(
+                "Error: No parsed data available",
+                component="replace",
+                level="error",
+            )
             return False
 
         func_lines = {}
@@ -485,10 +498,13 @@ class ShellParserCore(StateLogic):
                 "commands": {
                     "split": "Split shell script into target/components/*.sh",
                     "replace": "Replace function from components/ (with backup)",
+                    "split-docs": "Split into LLM-friendly markdown (target/docs/*.md)",
+                    "placeholder": "Replace all functions (except top-block) with placeholders",
                     "about": "Show environment & version info",
                     "help": "Show this help"
                 }
             }
+            # JSON channel: intentional stdout emit (bypasses quiet) so --json is not silenced
             print(json.dumps(help_data, indent=2))
         else:
             self.logger.prn("ShellParser — AI-Augmented Shell Script Component Manager")
@@ -499,20 +515,23 @@ class ShellParserCore(StateLogic):
             self.logger.prn("  shellparser <command> [--quiet] [--json]")
             self.logger.prn("")
             self.logger.prn("Available Commands:")
-            self.logger.prn("  split <source_file>      Split shell script into target/components/*.sh")
+            self.logger.prn("  split <source_file>                 Split shell script into target/components/*.sh")
             self.logger.prn("  replace <source_file> <func_name>   Replace function (with backup)")
-            self.logger.prn("  about                    Show environment & version info")
-            self.logger.prn("  help                     Show this help")
+            self.logger.prn("  split-docs <source_file>            LLM-friendly markdown under target/docs/")
+            self.logger.prn("  placeholder <source_file>           Placeholder rewrite (with backup; keep top-block)")
+            self.logger.prn("  about                              Show environment & version info")
+            self.logger.prn("  help                               Show this help")
             self.logger.prn("")
             self.logger.prn("Examples:")
             self.logger.prn("  shellparser split myscript.sh")
+            self.logger.prn("  shellparser split-docs myscript.sh")
             self.logger.prn("  shellparser replace myscript.sh my_function")
             self.logger.prn("  shellparser about")
             self.logger.prn("  shellparser help")
             self.logger.prn("")
             self.logger.prn("AI Collaboration Workflow:")
-            self.logger.prn("  1. split   → break large script into small editable functions")
-            self.logger.prn("  2. Edit individual *.sh files with AI")
+            self.logger.prn("  1. split or split-docs → break large script into small editable units")
+            self.logger.prn("  2. Edit individual *.sh or *.md files with AI")
             self.logger.prn("  3. replace → safely merge back with automatic backup")
             self.logger.prn("")
             self.logger.prn("Quiet / JSON Ready:")
@@ -1073,7 +1092,9 @@ class ShellParserCore(StateLogic):
         first_token = tokens[0] if tokens else ""
 
         # === High priority: Special lines ===
-        if self.line_num() == 1 and first_token.startswith("#!"):
+        # Tokenizer returns [] for any '#'-started line (incl. shebang). Detect shebang
+        # from stripped text — NOT first_token — so Stage 2 can own it as top-block.
+        if stripped.startswith("#!"):
             typ = "shebang"
         elif stripped.startswith("#"):
             typ = "comment"
@@ -1178,9 +1199,10 @@ class ShellParserCore(StateLogic):
             raw = item.get('raw','')
 
             if not orign_func_name or orign_func_name == "":
-                if typ in ("shebang"):
-                    orign_func_name = ""
-                    current_func = ""
+                if typ in ("shebang",):
+                    # File-level shebang is never part of a function body
+                    orign_func_name = "top-block"
+                    current_func = "top-block"
                 elif typ not in ("comment", "blank", "top_level"):
                     if current_func == "main-entry":
                         orign_func_name = current_func
@@ -1204,7 +1226,60 @@ class ShellParserCore(StateLogic):
             }
             self.map_array_for_file(array_entry)
 
+        # =============================================================================
+        # CIAO-Lite Protection Zone — file-leading preamble ownership (2026-08-11)
+        # Reverse pass correctly attaches comments to the function *below* them, but
+        # shebang + header comments *above the first function* must stay top-block so
+        # replace does not delete them when only one function is rewritten.
+        # Do NOT remove without explicit redesign.
+        # =============================================================================
+        self._stage_2_fix_leading_preamble()
+
         self.logger.log_message("Stage 2 reverse state machine completed", component="parser")
+
+    def _stage_2_fix_leading_preamble(self):
+        """Reassign shebang/comment/blank lines before first function to top-block.
+
+        CIAO-Lite Protection Zone
+        =================================================================================
+        Surgical correction after reverse ownership. Does not change reverse algorithm.
+        Only lines strictly before the first fn_start / fn_in_1_line are retargeted.
+        =================================================================================
+        """
+        arr = self.map_array_for_file()
+        if not arr:
+            return
+
+        # Stage 2 appends reverse (last file line first). Sort by line_num for forward scan.
+        entries = list(arr)
+        entries_fwd = sorted(entries, key=lambda e: e.get('line_num', 0))
+
+        first_fn_line = None
+        for e in entries_fwd:
+            if e.get('type') in ('fn_start', 'fn_in_1_line'):
+                first_fn_line = e.get('line_num')
+                break
+
+        if first_fn_line is None:
+            return
+
+        changed = False
+        for e in entries_fwd:
+            if e.get('line_num', 0) >= first_fn_line:
+                break
+            if e.get('type') in ('shebang', 'comment', 'blank'):
+                if e.get('func_name') != 'top-block':
+                    e['func_name'] = 'top-block'
+                    changed = True
+
+        if not changed:
+            return
+
+        # Rebuild map_array_for_file in the same reverse order Stage 3/replace expect
+        entries_rev = sorted(entries_fwd, key=lambda e: e.get('line_num', 0), reverse=True)
+        self.map_array_for_file([])
+        for e in entries_rev:
+            self.map_array_for_file(e)
 
     def stage_3_extract_functions(self):
         """Stage 3: Function extraction and file writing.
